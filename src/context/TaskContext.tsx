@@ -20,7 +20,7 @@ interface TaskContextType {
   error: string | null;
   setError: (error: string | null) => void;
   fetchTasks: () => Promise<void>;
-  createTask: (content: string, priority: "high" | "medium" | "low") => Promise<boolean>;
+  createTask: (content: string, priority: "high" | "medium" | "low", deadline?: string) => Promise<boolean>;
   updateTask: (id: string, updates: Partial<Task>) => Promise<boolean>;
   deleteTask: (id: string) => Promise<boolean>;
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
@@ -49,11 +49,11 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     }
   }, [tasks.length]);
 
-  const createTask = async (content: string, priority: "high" | "medium" | "low") => {
+  const createTask = async (content: string, priority: "high" | "medium" | "low", deadline?: string) => {
     try {
       setIsSubmitting(true);
       setError(null);
-      const response = await axios.post("/api/tasks", { content, priority });
+      const response = await axios.post("/api/tasks", { content, priority, deadline });
       if (response.data.success) {
         setTasks((prev) => [response.data.data, ...prev]);
         return true;

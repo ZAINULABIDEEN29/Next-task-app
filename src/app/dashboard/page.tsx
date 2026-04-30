@@ -32,6 +32,8 @@ export default function DashboardPage() {
   const [editContent, setEditContent] = useState("");
   const [editPriority, setEditPriority] = useState<"high" | "medium" | "low">("medium");
   const [editStatus, setEditStatus] = useState<"todo" | "in progress" | "completed">("todo");
+  const [newDeadline, setNewDeadline] = useState("");
+  const [editDeadline, setEditDeadline] = useState("");
 
   const handleLogout = async () => {
     await logout();
@@ -39,11 +41,12 @@ export default function DashboardPage() {
 
   const onSubmitTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    const success = await createTask(newContent, newPriority);
+    const success = await createTask(newContent, newPriority, newDeadline);
     if (success) {
       setNewContent("");
       setNewPriority("medium");
       setNewStatus("todo");
+      setNewDeadline("");
       setIsModalOpen(false);
     }
   };
@@ -53,6 +56,7 @@ export default function DashboardPage() {
       content: editContent, 
       priority: editPriority,
       status: editStatus,
+      deadline: editDeadline,
       isCompleted: editStatus === "completed"
     });
     if (success) setEditingId(null);
@@ -63,6 +67,7 @@ export default function DashboardPage() {
     setEditContent(task.content);
     setEditPriority(task.priority);
     setEditStatus(task.status || "todo");
+    setEditDeadline(task.deadline ? new Date(task.deadline).toISOString().split('T')[0] : "");
   };
 
   const filteredTasks = useMemo(() => {
@@ -307,6 +312,12 @@ export default function DashboardPage() {
                                 <option value="in progress">In Progress</option>
                                 <option value="completed">Completed</option>
                               </select>
+                              <input
+                                type="date"
+                                value={editDeadline}
+                                onChange={(e) => setEditDeadline(e.target.value)}
+                                className="flex-1 min-w-[100px] bg-slate-50 dark:bg-slate-800/50 border-2 border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold"
+                              />
                               <div className="flex gap-2 w-full sm:w-auto">
                                 <button
                                   onClick={(e) => { e.stopPropagation(); onUpdateTask(task._id); }}
@@ -345,6 +356,19 @@ export default function DashboardPage() {
                             {new Date(task.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                           </span>
                         </div>
+
+                        {task.deadline && (
+                          <div className="flex items-center gap-2">
+                            <svg className="text-indigo-500" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            <span className={`text-[10px] font-black uppercase tracking-widest ${
+                              new Date(task.deadline) < new Date() && !task.isCompleted
+                              ? 'text-red-500' 
+                              : 'text-indigo-500'
+                            }`}>
+                              Due {new Date(task.deadline).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                            </span>
+                          </div>
+                        )}
                         
                         <div className="flex items-center gap-2 transition-all duration-300">
                           {editingId !== task._id && (
@@ -444,6 +468,16 @@ export default function DashboardPage() {
                     ))}
                   </div>
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider ml-1">Due Date (Optional)</label>
+                <input
+                  type="date"
+                  value={newDeadline}
+                  onChange={(e) => setNewDeadline(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                />
               </div>
 
               <div className="flex gap-3 pt-2">
