@@ -5,7 +5,217 @@ import { useRouter } from "next/navigation";
 import axios from "axios";
 import { useTaskContext, Task } from "@/context/TaskContext";
 import { useAuthContext } from "@/context/AuthContext";
-import { motion, Reorder, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  DndContext,
+  closestCorners,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+  defaultDropAnimationSideEffects,
+  DragEndEvent,
+  DragOverEvent,
+  DragStartEvent,
+  useDroppable,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+
+
+// Sortable Task Card Component
+function SortableTask({ task, ...props }: { task: Task } & any) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: task._id });
+
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    opacity: isDragging ? 0.3 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      <TaskCard task={task} {...props} />
+    </div>
+  );
+}
+
+// Separate Task Card UI for reuse in Overlay
+function TaskCard({ 
+  task, 
+  editingId, 
+  editContent, 
+  setEditContent, 
+  editPriority, 
+  setEditPriority, 
+  editStatus, 
+  setEditStatus, 
+  editDeadline, 
+  setEditDeadline, 
+  onUpdateTask, 
+  setEditingId, 
+  startEditing, 
+  deleteTask,
+  getPriorityColor
+}: any) {
+  return (
+    <motion.div
+      layout
+      className="group relative bg-white dark:bg-[#0c0c0e] p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-xl hover:shadow-indigo-500/5 transition-all duration-300 cursor-grab active:cursor-grabbing"
+    >
+      {/* Task Priority Badge */}
+      <div className="flex justify-between items-start mb-3">
+        <div className={`px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-wider shadow-sm ${getPriorityColor(task.priority)}`}>
+          {task.priority}
+        </div>
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button 
+            onClick={(e) => { e.stopPropagation(); startEditing(task); }}
+            className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          <button 
+            onClick={(e) => { e.stopPropagation(); deleteTask(task._id); }}
+            className="p-1 text-slate-400 hover:text-rose-600"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+          </button>
+        </div>
+      </div>
+
+      {/* Content */}
+      {editingId === task._id ? (
+        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300" onPointerDown={(e) => e.stopPropagation()}>
+          <div className="space-y-1">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Content</label>
+            <textarea
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              autoFocus
+              className="w-full bg-slate-50 dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-all resize-none min-h-[100px] font-medium"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Priority</label>
+              <select
+                value={editPriority}
+                onChange={(e) => setEditPriority(e.target.value as any)}
+                className="w-full bg-slate-50 dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-[11px] font-bold focus:outline-none focus:border-indigo-500 transition-all"
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Status</label>
+              <select
+                value={editStatus}
+                onChange={(e) => setEditStatus(e.target.value as any)}
+                className="w-full bg-slate-50 dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-[11px] font-bold focus:outline-none focus:border-indigo-500 transition-all"
+              >
+                <option value="todo">To Do</option>
+                <option value="in progress">In Progress</option>
+                <option value="completed">Completed</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Due Date</label>
+            <input
+              type="date"
+              value={editDeadline}
+              onChange={(e) => setEditDeadline(e.target.value)}
+              className="w-full bg-slate-50 dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-[11px] font-bold focus:outline-none focus:border-indigo-500 transition-all"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <button 
+              onClick={(e) => { e.stopPropagation(); onUpdateTask(task._id); }} 
+              className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest py-2 rounded-xl transition-all shadow-lg shadow-indigo-600/20"
+            >
+              Save
+            </button>
+            <button 
+              onClick={(e) => { e.stopPropagation(); setEditingId(null); }} 
+              className="flex-1 bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-xs font-black uppercase tracking-widest py-2 rounded-xl hover:bg-slate-300 dark:hover:bg-slate-700 transition-all"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p className="text-[14px] font-bold text-slate-800 dark:text-slate-200 mb-4 leading-tight group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+          {task.content}
+        </p>
+      )}
+
+      {/* Metadata Row */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          {task.deadline && (
+            <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-tight shadow-sm ${
+              new Date(task.deadline) < new Date() && task.status !== 'completed'
+              ? 'bg-rose-500 text-white'
+              : 'bg-emerald-500 text-white'
+            }`}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              {new Date(task.deadline).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+            </div>
+          )}
+          
+          <div className="flex items-center gap-1 text-slate-400 group-hover:text-slate-500">
+              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+              <span className="text-[9px] font-bold">0/3</span>
+          </div>
+        </div>
+
+        <div className="flex -space-x-1.5">
+          <div className="w-5 h-5 rounded-full border border-white dark:border-slate-900 bg-slate-200 dark:bg-slate-800 overflow-hidden shadow-sm">
+            <img src={`https://i.pravatar.cc/50?u=${task._id}`} alt="avatar" />
+          </div>
+          <div className="w-5 h-5 rounded-full border border-white dark:border-slate-900 bg-slate-200 dark:bg-slate-800 overflow-hidden shadow-sm">
+            <img src={`https://i.pravatar.cc/50?u=${task._id}1`} alt="avatar" />
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+
+
+function DroppableColumn({ id, children, className }: any) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  
+  return (
+    <div 
+      ref={setNodeRef} 
+      className={`${className} transition-colors duration-200 ${isOver ? 'bg-indigo-500/10 ring-2 ring-indigo-500/20' : ''}`}
+    >
+      {children}
+    </div>
+  );
+}
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -26,7 +236,7 @@ export default function DashboardPage() {
   const [newContent, setNewContent] = useState("");
   const [newPriority, setNewPriority] = useState<"high" | "medium" | "low">("medium");
   const [newStatus, setNewStatus] = useState<"todo" | "in progress" | "completed">("todo");
-  const [filter, setFilter] = useState<"all" | "todo" | "in progress" | "completed">("all");
+  const [viewFilter, setViewFilter] = useState<"all" | "pending" | "completed">("all");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
@@ -34,6 +244,18 @@ export default function DashboardPage() {
   const [editStatus, setEditStatus] = useState<"todo" | "in progress" | "completed">("todo");
   const [newDeadline, setNewDeadline] = useState("");
   const [editDeadline, setEditDeadline] = useState("");
+  const [activeTask, setActiveTask] = useState<Task | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   const handleLogout = async () => {
     await logout();
@@ -41,7 +263,7 @@ export default function DashboardPage() {
 
   const onSubmitTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    const success = await createTask(newContent, newPriority, newDeadline);
+    const success = await createTask(newContent, newPriority, newDeadline, newStatus);
     if (success) {
       setNewContent("");
       setNewPriority("medium");
@@ -70,22 +292,87 @@ export default function DashboardPage() {
     setEditDeadline(task.deadline ? new Date(task.deadline).toISOString().split('T')[0] : "");
   };
 
-  const filteredTasks = useMemo(() => {
-    return tasks.filter(task => {
-      if (filter === "all") return true;
-      return task.status === filter;
-    });
-  }, [tasks, filter]);
+  const handleDragStart = (event: DragStartEvent) => {
+    const { active } = event;
+    const task = tasks.find((t) => t._id === active.id);
+    if (task) setActiveTask(task);
+  };
 
-  const handleReorder = useCallback((reorderedSubset: Task[]) => {
-    const newTasks = [...tasks];
-    const indices = reorderedSubset.map(item => tasks.findIndex(t => t._id === item._id));
-    const sortedIndices = [...indices].sort((a, b) => a - b);
-    reorderedSubset.forEach((item, i) => {
-      newTasks[sortedIndices[i]] = item;
+  const handleDragOver = (event: DragOverEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+
+    const activeId = active.id;
+    const overId = over.id;
+
+    if (activeId === overId) return;
+
+    setTasks((prev) => {
+      const activeIndex = prev.findIndex((t) => t._id === activeId);
+      const overIndex = prev.findIndex((t) => t._id === overId);
+      
+      const activeTask = prev[activeIndex];
+      if (!activeTask) return prev;
+
+      // Case 1: Dragging over another task
+      const overTask = prev[overIndex];
+      if (overTask && activeTask.status !== overTask.status) {
+        const newTasks = [...prev];
+        newTasks[activeIndex] = { ...activeTask, status: overTask.status };
+        return arrayMove(newTasks, activeIndex, overIndex);
+      }
+
+      // Case 2: Dragging over a column background
+      const isOverAColumn = ["todo", "in progress", "completed"].includes(overId as string);
+      if (isOverAColumn && activeTask.status !== overId) {
+        const newTasks = [...prev];
+        newTasks[activeIndex] = { ...activeTask, status: overId as any };
+        // Place it at the end of the items in that column
+        const columnItems = newTasks.filter(t => t.status === overId);
+        const lastInColumn = columnItems[columnItems.length - 1];
+        const lastIndex = lastInColumn ? newTasks.findIndex(t => t._id === lastInColumn._id) : activeIndex;
+        
+        return arrayMove(newTasks, activeIndex, lastIndex);
+      }
+
+      return prev;
     });
-    setTasks(newTasks);
-  }, [tasks, setTasks]);
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveTask(null);
+
+    if (!over) return;
+
+    const activeId = active.id;
+    const overId = over.id;
+
+    setTasks((prev) => {
+      const activeIndex = prev.findIndex((t) => t._id === activeId);
+      const overIndex = prev.findIndex((t) => t._id === overId);
+
+      let updatedTasks = prev;
+      if (activeIndex !== -1 && overIndex !== -1 && activeId !== overId) {
+        updatedTasks = arrayMove(prev, activeIndex, overIndex);
+      }
+
+      const finalTask = updatedTasks.find(t => t._id === activeId);
+      if (finalTask) {
+        // We trigger the updateTask outside the state update
+        setTimeout(() => {
+          updateTask(finalTask._id, { 
+            status: finalTask.status,
+            isCompleted: finalTask.status === "completed"
+          });
+        }, 0);
+      }
+
+      return updatedTasks;
+    });
+  };
+
+
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -98,38 +385,51 @@ export default function DashboardPage() {
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case "high": return "bg-red-500/10 text-red-500 border-red-500/30";
-      case "medium": return "bg-orange-500/10 text-orange-500 border-orange-500/30";
-      case "low": return "bg-indigo-500/10 text-indigo-500 border-indigo-500/30";
-      default: return "bg-slate-500/10 text-slate-500 border-slate-500/30";
+      case "high": return "bg-rose-500 text-white shadow-rose-500/20";
+      case "medium": return "bg-amber-500 text-white shadow-amber-500/20";
+      case "low": return "bg-emerald-500 text-white shadow-emerald-500/20";
+      default: return "bg-slate-500 text-white shadow-slate-500/20";
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case "todo": return "Upcoming";
+      case "in progress": return "In Progress";
+      case "completed": return "Done";
+      default: return status;
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#fafafa] dark:bg-[#09090b] text-slate-900 dark:text-slate-100 font-sans selection:bg-indigo-100 dark:selection:bg-indigo-500/30">
-      {/* Main Content */}
-      <main className="p-6 lg:p-10 max-w-7xl mx-auto">
-        <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
+    <div className="min-h-screen bg-fixed bg-gradient-to-br from-indigo-50/50 via-white to-sky-50/50 dark:from-slate-950 dark:via-[#09090b] dark:to-indigo-950/20 text-slate-900 dark:text-slate-100 font-sans selection:bg-indigo-100 dark:selection:bg-indigo-500/30">
+      {/* Premium Gradient Background Element */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-500/5 blur-[120px] rounded-full" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-sky-500/5 blur-[120px] rounded-full" />
+      </div>
+
+      
+      <main className="relative z-10 p-6 lg:px-10 max-w-[1600px] mx-auto">
+        <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Overview</h1>
-            <p className="text-slate-500 text-sm">Manage your tasks and keep track of your progress.</p>
+            <div className="flex items-center gap-3 mb-1">
+              <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-white">Task Management</h1>
+             
+            </div>
+            <p className="text-slate-500 text-sm font-medium">Keep your team synchronized and tasks on track.</p>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2 rounded-lg text-sm transition-colors shadow-sm flex items-center gap-2"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              New Task
-            </button>
-            <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
-              {(["all", "todo", "in progress", "completed"] as const).map((f) => (
+          
+          <div className="flex items-center gap-4">
+            
+            <div className="flex bg-slate-100 dark:bg-slate-800/50 p-1 rounded-xl border border-slate-200 dark:border-slate-700/50 mr-2">
+              {(["all", "pending", "completed"] as const).map((f) => (
                 <button
                   key={f}
-                  onClick={() => setFilter(f)}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-md capitalize transition-all ${
-                    filter === f 
-                    ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-white shadow-sm' 
+                  onClick={() => setViewFilter(f)}
+                  className={`px-4 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${
+                    viewFilter === f 
+                    ? 'bg-white dark:bg-indigo-600 text-indigo-600 dark:text-white shadow-sm' 
                     : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                   }`}
                 >
@@ -137,265 +437,132 @@ export default function DashboardPage() {
                 </button>
               ))}
             </div>
-            <button 
-              onClick={handleLogout} 
-              className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg transition-colors"
-              title="Logout"
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-2 group"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              <svg className="group-hover:rotate-90 transition-transform duration-300" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add Task
             </button>
           </div>
         </header>
 
         {error && (
-          <div className="mb-6 p-4 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 text-sm font-medium flex justify-between items-center">
+          <div className="mb-8 p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/50 text-rose-600 dark:text-rose-400 text-sm font-bold flex justify-between items-center shadow-sm">
             {error}
-            <button onClick={() => setError(null)} className="text-red-900 dark:text-red-200 hover:opacity-50 transition-opacity">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            <button onClick={() => setError(null)} className="hover:opacity-50 transition-opacity">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
         )}
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
-          <div className="p-5 bg-white dark:bg-[#0c0c0e] border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
-            <p className="text-xs font-medium text-slate-500 mb-1">Total Tasks</p>
-            <p className="text-2xl font-bold">{tasks.length}</p>
-          </div>
-          <div className="p-5 bg-white dark:bg-[#0c0c0e] border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
-            <p className="text-xs font-medium text-slate-500 mb-1">Active</p>
-            <p className="text-2xl font-bold">{tasks.filter(t => !t.isCompleted).length}</p>
-          </div>
-          <div className="p-5 bg-white dark:bg-[#0c0c0e] border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
-            <p className="text-xs font-medium text-slate-500 mb-1">Completed</p>
-            <p className="text-2xl font-bold text-emerald-600">{tasks.filter(t => t.isCompleted).length}</p>
-          </div>
-          <div className="p-5 bg-white dark:bg-[#0c0c0e] border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
-            <p className="text-xs font-medium text-slate-500 mb-1">Completion Rate</p>
-            <p className="text-2xl font-bold">{tasks.length > 0 ? Math.round((tasks.filter(t => t.isCompleted).length / tasks.length) * 100) : 0}%</p>
-          </div>
-        </div>
+        {/* Kanban Board Layout */}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCorners}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start pb-20 overflow-x-auto">
+            {(["todo", "in progress", "completed"] as const)
+              .filter(status => {
+                if (viewFilter === "all") return true;
+                if (viewFilter === "pending") return status === "todo" || status === "in progress";
+                if (viewFilter === "completed") return status === "completed";
+                return true;
+              })
+              .map((status) => (
+              <div key={status} id={status} className={`flex flex-col min-w-[320px] max-h-[85vh] ${viewFilter !== 'all' ? 'lg:max-w-md mx-auto w-full' : ''}`}>
+                <div className="flex items-center justify-between mb-4 px-2">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                      {getStatusLabel(status)}
+                    </h2>
+                    <span className="px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-[10px] font-bold text-slate-600 dark:text-slate-400">
+                      {tasks.filter(t => t.status === status).length}
+                    </span>
+                  </div>
+                </div>
 
-        {/* Task List Container */}
-        <div className="bg-white dark:bg-[#0c0c0e] border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
-          <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-            <h3 className="font-semibold text-slate-800 dark:text-slate-200">Tasks</h3>
-            <span className="text-xs text-slate-400 font-medium">{filteredTasks.length} shown</span>
+                <DroppableColumn 
+                  id={status} 
+                  className="flex-1 flex flex-col gap-3 p-3 bg-slate-100/50 dark:bg-slate-900/30 border border-slate-200/60 dark:border-slate-800/60 rounded-2xl overflow-y-auto custom-scrollbar backdrop-blur-sm min-h-[200px]"
+                >
+                  <SortableContext 
+                    id={status}
+                    items={tasks.filter(t => t.status === status).map(t => t._id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <AnimatePresence mode="popLayout">
+                      {tasks.filter(t => t.status === status).length === 0 ? (
+                        <motion.div
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          className="py-10 text-center flex flex-col items-center justify-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl"
+                        >
+                          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Empty</p>
+                        </motion.div>
+                      ) : (
+                        tasks.filter(t => t.status === status).map((task) => (
+                          <SortableTask 
+                            key={task._id} 
+                            task={task}
+                            editingId={editingId}
+                            editContent={editContent}
+                            setEditContent={setEditContent}
+                            editPriority={editPriority}
+                            setEditPriority={setEditPriority}
+                            editStatus={editStatus}
+                            setEditStatus={setEditStatus}
+                            editDeadline={editDeadline}
+                            setEditDeadline={setEditDeadline}
+                            onUpdateTask={onUpdateTask}
+                            setEditingId={setEditingId}
+                            startEditing={startEditing}
+                            deleteTask={deleteTask}
+                            getPriorityColor={getPriorityColor}
+                          />
+                        ))
+                      )}
+                    </AnimatePresence>
+                  </SortableContext>
+
+                  <button 
+                    onClick={() => {
+                      setNewStatus(status);
+                      setIsModalOpen(true);
+                    }}
+                    className="mt-2 group flex items-center gap-2 p-2 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 rounded-xl transition-all text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                  >
+                    <svg className="group-hover:rotate-90 transition-transform" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    <span className="text-xs font-bold">Add another card</span>
+                  </button>
+                </DroppableColumn>
+              </div>
+            ))}
           </div>
           
-          {isLoading && tasks.length === 0 ? (
-            <div className="p-8 text-center text-slate-500 text-sm">Syncing tasks...</div>
-          ) : filteredTasks.length === 0 ? (
-            <div className="p-20 text-center flex flex-col items-center">
-              <div className="w-12 h-12 bg-slate-50 dark:bg-slate-900 rounded-full flex items-center justify-center mb-4 text-slate-400">
-                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+          <DragOverlay dropAnimation={{
+            sideEffects: defaultDropAnimationSideEffects({
+              styles: {
+                active: {
+                  opacity: '0.5',
+                },
+              },
+            }),
+          }}>
+            {activeTask ? (
+              <div className="w-[320px] rotate-2 scale-105 opacity-90 shadow-2xl">
+                <TaskCard 
+                  task={activeTask} 
+                  getPriorityColor={getPriorityColor}
+                  editingId={null} // Don't show editing in overlay
+                />
               </div>
-              <p className="text-slate-900 dark:text-slate-200 font-semibold mb-1">No tasks found</p>
-              <p className="text-slate-500 text-sm">Create your first task to get started.</p>
-            </div>
-          ) : (
-            <Reorder.Group 
-              as="div"
-              axis="y" 
-              values={filteredTasks} 
-              onReorder={handleReorder}
-              className="flex flex-col gap-4 p-6 w-full"
-            >
-              <AnimatePresence>
-                {filteredTasks.map((task) => (
-                  <Reorder.Item 
-                    as="div"
-                    key={task._id} 
-                    value={task}
-                    layout="position"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    transition={{ 
-                      layout: { type: "spring", stiffness: 600, damping: 40 },
-                      opacity: { duration: 0.2 }
-                    }}
-                    whileDrag={{ 
-                      scale: 1.02, 
-                      rotate: 1,
-                      zIndex: 50,
-                      boxShadow: "0 20px 40px rgba(0,0,0,0.12)" 
-                    }}
-                    className={`group relative flex flex-col p-0 rounded-2xl overflow-hidden transition-all duration-500 shadow-sm min-h-[120px] cursor-grab active:cursor-grabbing ${
-                      task.isCompleted 
-                      ? 'opacity-75 grayscale-[0.5]' 
-                      : ''
-                    }`}
-                  >
-                    {/* Glass Background & Borders */}
-                    <div className={`absolute inset-0 transition-all duration-500 ${
-                      task.isCompleted
-                      ? 'bg-slate-100/50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800'
-                      : 'bg-white dark:bg-[#0c0c0e] border border-slate-200 dark:border-slate-800 group-hover:border-indigo-500/50 group-hover:shadow-[0_20px_50px_rgba(79,70,229,0.1)]'
-                    }`} />
-                    
-                    {/* Top-right Accent Glow (Hover only) */}
-                    {!task.isCompleted && (
-                      <div className="absolute -top-20 -right-20 w-40 h-40 bg-indigo-500/10 blur-[80px] rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                    )}
-
-                    <div className="relative h-full flex flex-col p-6 z-10">
-                      {/* Header: Status and Priority */}
-                      <div className="flex justify-between items-center mb-4">
-                        <div className="flex gap-2">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const newCompleted = !task.isCompleted;
-                              updateTask(task._id, { 
-                                isCompleted: newCompleted,
-                                status: newCompleted ? "completed" : "todo"
-                              });
-                            }}
-                            className={`w-8 h-8 rounded-xl border-2 flex items-center justify-center transition-all duration-300 transform active:scale-90 ${
-                              task.isCompleted 
-                              ? 'bg-emerald-500 border-emerald-500 text-white' 
-                              : 'border-slate-200 dark:border-slate-700 hover:border-indigo-500 dark:hover:border-indigo-400 bg-white dark:bg-slate-800'
-                            }`}
-                          >
-                            {task.isCompleted && <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
-                          </button>
-                          
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const statuses: ("todo" | "in progress" | "completed")[] = ["todo", "in progress", "completed"];
-                              const currentIndex = statuses.indexOf(task.status || "todo");
-                              const nextStatus = statuses[(currentIndex + 1) % statuses.length];
-                              updateTask(task._id, { 
-                                status: nextStatus,
-                                isCompleted: nextStatus === "completed"
-                              });
-                            }}
-                            className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border-2 transition-all ${getStatusColor(task.status || "todo")}`}
-                          >
-                            {task.status || "todo"}
-                          </button>
-                        </div>
-                        
-                        <div className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border-2 ${getPriorityColor(task.priority)}`}>
-                          {task.priority}
-                        </div>
-                      </div>
-                      
-                      {/* Content: Top-aligned focus */}
-                      <div className="flex-1 flex flex-col">
-                        {editingId === task._id ? (
-                          <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300" onPointerDown={(e) => e.stopPropagation()}>
-                            <textarea
-                              value={editContent}
-                              onChange={(e) => setEditContent(e.target.value)}
-                              autoFocus
-                              className="w-full bg-slate-50 dark:bg-slate-800/50 border-2 border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition-all resize-none h-32 font-medium"
-                            />
-                            <div className="flex flex-wrap gap-2">
-                              <select
-                                value={editPriority}
-                                onChange={(e) => setEditPriority(e.target.value as any)}
-                                className="flex-1 min-w-[100px] bg-slate-50 dark:bg-slate-800/50 border-2 border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold"
-                              >
-                                <option value="low">Low Priority</option>
-                                <option value="medium">Medium Priority</option>
-                                <option value="high">High Priority</option>
-                              </select>
-                              <select
-                                value={editStatus}
-                                onChange={(e) => setEditStatus(e.target.value as any)}
-                                className="flex-1 min-w-[100px] bg-slate-50 dark:bg-slate-800/50 border-2 border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold"
-                              >
-                                <option value="todo">To Do</option>
-                                <option value="in progress">In Progress</option>
-                                <option value="completed">Completed</option>
-                              </select>
-                              <input
-                                type="date"
-                                value={editDeadline}
-                                onChange={(e) => setEditDeadline(e.target.value)}
-                                className="flex-1 min-w-[100px] bg-slate-50 dark:bg-slate-800/50 border-2 border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold"
-                              />
-                              <div className="flex gap-2 w-full sm:w-auto">
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); onUpdateTask(task._id); }}
-                                  className="flex-1 bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 transition-all"
-                                >
-                                  Save
-                                </button>
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); setEditingId(null); }}
-                                  className="flex-1 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-300 dark:hover:bg-slate-600 transition-all"
-                                >
-                                  Skip
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            <p className={`text-lg font-bold leading-tight line-clamp-6 transition-colors ${
-                              task.isCompleted 
-                              ? 'text-slate-400 line-through' 
-                              : 'text-slate-800 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400'
-                            }`}>
-                              {task.content}
-                            </p>
-                            <div className="w-8 h-1 bg-slate-100 dark:bg-slate-800 rounded-full group-hover:w-16 group-hover:bg-indigo-500/50 transition-all duration-500" />
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Footer: Date and Hidden Actions */}
-                      <div className="mt-auto pt-6 border-t border-slate-100 dark:border-slate-800/50 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <svg className="text-slate-400" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                          <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest">
-                            {new Date(task.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                          </span>
-                        </div>
-
-                        {task.deadline && (
-                          <div className="flex items-center gap-2">
-                            <svg className="text-indigo-500" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                            <span className={`text-[10px] font-black uppercase tracking-widest ${
-                              new Date(task.deadline) < new Date() && !task.isCompleted
-                              ? 'text-red-500' 
-                              : 'text-indigo-500'
-                            }`}>
-                              Due {new Date(task.deadline).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                            </span>
-                          </div>
-                        )}
-                        
-                        <div className="flex items-center gap-2 transition-all duration-300">
-                          {editingId !== task._id && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); startEditing(task); }}
-                              className="p-2.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-600 hover:text-white dark:hover:bg-indigo-500 rounded-xl transition-all shadow-sm"
-                              title="Edit Task"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                            </button>
-                          )}
-                          <button
-                            onClick={(e) => { e.stopPropagation(); deleteTask(task._id); }}
-                            className="p-2.5 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-600 hover:text-white dark:hover:bg-red-500 rounded-xl transition-all shadow-sm"
-                            title="Delete Task"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </Reorder.Item>
-                ))}
-              </AnimatePresence>
-            </Reorder.Group>
-          )}
-        </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
       </main>
 
       {/* Add Task Modal */}

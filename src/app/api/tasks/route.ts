@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     if (!user) return ApiResponse.error("Unauthorized", 401);
 
     const body = await req.json();
-    const { content, priority, deadline } = body;
+    const { content, priority, deadline, status } = body;
 
     if (!content) return ApiResponse.error("Content is required", 400);
 
@@ -33,6 +33,8 @@ export async function POST(req: NextRequest) {
       content,
       priority: priority || "medium",
       deadline,
+      status: status || "todo",
+      isCompleted: status === "completed",
       author: user.id,
     });
 

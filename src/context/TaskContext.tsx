@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import axios from "axios";
+import { useAuthContext } from "@/context/AuthContext";
 
 export interface Task {
   _id: string;
@@ -20,7 +21,7 @@ interface TaskContextType {
   error: string | null;
   setError: (error: string | null) => void;
   fetchTasks: () => Promise<void>;
-  createTask: (content: string, priority: "high" | "medium" | "low", deadline?: string) => Promise<boolean>;
+  createTask: (content: string, priority: "high" | "medium" | "low", deadline?: string, status?: string) => Promise<boolean>;
   updateTask: (id: string, updates: Partial<Task>) => Promise<boolean>;
   deleteTask: (id: string) => Promise<boolean>;
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
@@ -49,11 +50,11 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     }
   }, [tasks.length]);
 
-  const createTask = async (content: string, priority: "high" | "medium" | "low", deadline?: string) => {
+  const createTask = async (content: string, priority: "high" | "medium" | "low", deadline?: string, status?: string) => {
     try {
       setIsSubmitting(true);
       setError(null);
-      const response = await axios.post("/api/tasks", { content, priority, deadline });
+      const response = await axios.post("/api/tasks", { content, priority, deadline, status });
       if (response.data.success) {
         setTasks((prev) => [response.data.data, ...prev]);
         return true;
@@ -113,9 +114,16 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const { isAuthenticated } = useAuthContext();
+
   useEffect(() => {
-    fetchTasks();
-  }, [fetchTasks]);
+    if (isAuthenticated) {
+      fetchTasks();
+    } else {
+      setTasks([]);
+      setError(null);
+    }
+  }, [fetchTasks, isAuthenticated]);
 
   return (
     <TaskContext.Provider
